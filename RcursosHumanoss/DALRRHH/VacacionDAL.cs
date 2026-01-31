@@ -48,6 +48,52 @@ ORDER BY v.IdVacaciones DESC;";
             return lista;
         }
 
+        // ===============================================
+        // LISTAR ÚLTIMAS VACACIONES POR DEPARTAMENTO (área)
+        // ===============================================
+        public static List<EntidadVacacion> ListarUltimosConVacacionesPorDepartamento(int top)
+        {
+            int idDep = SesionHelper.ObtenerIdDepartamento();
+            if (idDep <= 0)
+                throw new InvalidOperationException("No se encontró IdDepartamento en sesión.");
+
+            const string sql = @"
+SELECT TOP (@Top)
+    v.IdVacaciones,
+    v.IdEmpleado,
+    v.FechaInicio,
+    v.FechaFin,
+    e.CI,
+    e.Nombres,
+    e.PrimerApellido,
+    e.SegundoApellido,
+    d.Nombre AS DepartamentoNombre,
+    c.Nombre AS CargoNombre
+FROM Vacaciones v
+INNER JOIN Empleado e ON e.IdEmpleado = v.IdEmpleado
+INNER JOIN Departamento d ON d.IdDepartamento = e.IdDepartamento
+INNER JOIN Cargo c ON c.IdCargo = e.IdCargo
+WHERE e.IdDepartamento = @IdDepartamento
+ORDER BY v.IdVacaciones DESC;";
+
+            var lista = new List<EntidadVacacion>();
+
+            using (SqlConnection cn = ConexionDB.ObtenerConexion())
+            using (SqlCommand cmd = new SqlCommand(sql, cn))
+            {
+                cmd.Parameters.Add("@Top", SqlDbType.Int).Value = top;
+                cmd.Parameters.Add("@IdDepartamento", SqlDbType.Int).Value = idDep;
+
+                using (SqlDataReader rd = cmd.ExecuteReader())
+                {
+                    while (rd.Read())
+                        lista.Add(MapVacacion(rd));
+                }
+            }
+
+            return lista;
+        }
+
         // ===========================
         //  BUSCAR (CI / Nombres / Apellidos)
         // ===========================
@@ -90,6 +136,66 @@ ORDER BY v.IdVacaciones DESC;";
             using (SqlConnection cn = ConexionDB.ObtenerConexion())
             using (SqlCommand cmd = new SqlCommand(sql, cn))
             {
+                cmd.Parameters.Add("@Valor", SqlDbType.NVarChar, 200).Value = "%" + valor + "%";
+
+                using (SqlDataReader rd = cmd.ExecuteReader())
+                {
+                    while (rd.Read())
+                        lista.Add(MapVacacion(rd));
+                }
+            }
+
+            return lista;
+        }
+
+        // ===============================================
+        // BUSCAR POR DEPARTAMENTO (para Supervisor/Área)
+        // ===============================================
+        public static List<EntidadVacacion> BuscarPorDepartamento(string criterio, string valor)
+        {
+            int idDep = SesionHelper.ObtenerIdDepartamento();
+            if (idDep <= 0)
+                throw new InvalidOperationException("No se encontró IdDepartamento en sesión.");
+
+            criterio = (criterio ?? "").Trim().ToUpperInvariant();
+            valor = (valor ?? "").Trim();
+
+            string where;
+            if (criterio == "CI")
+                where = "e.CI LIKE @Valor";
+            else if (criterio == "NOMBRE" || criterio == "NOMBRES")
+                where = "e.Nombres LIKE @Valor";
+            else if (criterio == "APELLIDOS" || criterio == "APELLIDO")
+                where = "(e.PrimerApellido LIKE @Valor OR e.SegundoApellido LIKE @Valor)";
+            else
+                where = "(e.CI LIKE @Valor OR e.Nombres LIKE @Valor OR e.PrimerApellido LIKE @Valor OR e.SegundoApellido LIKE @Valor)";
+
+            string sql = $@"
+SELECT
+    v.IdVacaciones,
+    v.IdEmpleado,
+    v.FechaInicio,
+    v.FechaFin,
+    e.CI,
+    e.Nombres,
+    e.PrimerApellido,
+    e.SegundoApellido,
+    d.Nombre AS DepartamentoNombre,
+    c.Nombre AS CargoNombre
+FROM Vacaciones v
+INNER JOIN Empleado e ON e.IdEmpleado = v.IdEmpleado
+INNER JOIN Departamento d ON d.IdDepartamento = e.IdDepartamento
+INNER JOIN Cargo c ON c.IdCargo = e.IdCargo
+WHERE e.IdDepartamento = @IdDepartamento
+  AND {where}
+ORDER BY v.IdVacaciones DESC;";
+
+            var lista = new List<EntidadVacacion>();
+
+            using (SqlConnection cn = ConexionDB.ObtenerConexion())
+            using (SqlCommand cmd = new SqlCommand(sql, cn))
+            {
+                cmd.Parameters.Add("@IdDepartamento", SqlDbType.Int).Value = idDep;
                 cmd.Parameters.Add("@Valor", SqlDbType.NVarChar, 200).Value = "%" + valor + "%";
 
                 using (SqlDataReader rd = cmd.ExecuteReader())
@@ -216,27 +322,8 @@ WHERE IdEmpleado = @IdEmpleado
         }
 
         // ===========================
-        //  MAP
+        // LISTAR POR EMPLEADO
         // ===========================
-        private static EntidadVacacion MapVacacion(SqlDataReader rd)
-        {
-            string SafeString(string col) => rd[col] == DBNull.Value ? "" : rd[col].ToString();
-
-            return new EntidadVacacion
-            {
-                IdVacaciones = Convert.ToInt32(rd["IdVacaciones"]),
-                IdEmpleado = Convert.ToInt32(rd["IdEmpleado"]),
-                FechaInicio = Convert.ToDateTime(rd["FechaInicio"]),
-                FechaFin = Convert.ToDateTime(rd["FechaFin"]),
-                CI = SafeString("CI"),
-                Nombres = SafeString("Nombres"),
-                PrimerApellido = SafeString("PrimerApellido"),
-                SegundoApellido = SafeString("SegundoApellido"),
-                DepartamentoNombre = SafeString("DepartamentoNombre"),
-                CargoNombre = SafeString("CargoNombre")
-            };
-
-        }
         public static List<EntidadVacacion> ListarPorEmpleado(int idEmpleado)
         {
             const string sql = @"
@@ -264,6 +351,167 @@ ORDER BY v.IdVacaciones DESC;";
             using (SqlCommand cmd = new SqlCommand(sql, cn))
             {
                 cmd.Parameters.Add("@IdEmpleado", SqlDbType.Int).Value = idEmpleado;
+
+                using (SqlDataReader rd = cmd.ExecuteReader())
+                {
+                    while (rd.Read())
+                        lista.Add(MapVacacion(rd));
+                }
+            }
+
+            return lista;
+        }
+
+        // ===========================
+        //  MAP
+        // ===========================
+        private static EntidadVacacion MapVacacion(SqlDataReader rd)
+        {
+            string SafeString(string col) => rd[col] == DBNull.Value ? "" : rd[col].ToString();
+
+            return new EntidadVacacion
+            {
+                IdVacaciones = Convert.ToInt32(rd["IdVacaciones"]),
+                IdEmpleado = Convert.ToInt32(rd["IdEmpleado"]),
+                FechaInicio = Convert.ToDateTime(rd["FechaInicio"]),
+                FechaFin = Convert.ToDateTime(rd["FechaFin"]),
+                CI = SafeString("CI"),
+                Nombres = SafeString("Nombres"),
+                PrimerApellido = SafeString("PrimerApellido"),
+                SegundoApellido = SafeString("SegundoApellido"),
+                DepartamentoNombre = SafeString("DepartamentoNombre"),
+                CargoNombre = SafeString("CargoNombre")
+            };
+        }
+
+        // ===========================
+        // Helper para leer IdDepartamento desde sesión
+        // ===========================
+        private static class SesionHelper
+        {
+            public static int ObtenerIdDepartamento()
+            {
+                // 1) tu clase actual con typo: EnridadSesion
+                int id = TryGetStaticInt("RcursosHumanoss.SesionRRHH.EnridadSesion", "IdDepartamento");
+                if (id > 0) return id;
+
+                // 2) si la corriges a EntidadSesion
+                id = TryGetStaticInt("RcursosHumanoss.SesionRRHH.EntidadSesion", "IdDepartamento");
+                if (id > 0) return id;
+
+                // 3) si aún existe SesionActual
+                id = TryGetStaticInt("RcursosHumanoss.SesionRRHH.SesionActual", "IdDepartamento");
+                return id;
+            }
+
+            private static int TryGetStaticInt(string fullTypeName, string propName)
+            {
+                try
+                {
+                    // IMPORTANTE: Type.GetType necesita assembly si está en otro proyecto.
+                    // Si no lo encuentra, devuelve null. Por eso hay fallback arriba.
+                    Type t = Type.GetType(fullTypeName);
+                    if (t == null) return 0;
+
+                    var p = t.GetProperty(propName,
+                        System.Reflection.BindingFlags.Public |
+                        System.Reflection.BindingFlags.NonPublic |
+                        System.Reflection.BindingFlags.Static);
+
+                    if (p == null) return 0;
+
+                    object v = p.GetValue(null);
+                    if (v == null) return 0;
+
+                    return Convert.ToInt32(v);
+                }
+                catch
+                {
+                    return 0;
+                }
+            }
+        }
+        public static List<EntidadVacacion> ListarUltimosConVacacionesPorDepartamento(int top, int idDepartamento)
+        {
+            const string sql = @"
+SELECT TOP (@Top)
+    v.IdVacaciones,
+    v.IdEmpleado,
+    v.FechaInicio,
+    v.FechaFin,
+    e.CI,
+    e.Nombres,
+    e.PrimerApellido,
+    e.SegundoApellido,
+    d.Nombre AS DepartamentoNombre,
+    c.Nombre AS CargoNombre
+FROM Vacaciones v
+INNER JOIN Empleado e ON e.IdEmpleado = v.IdEmpleado
+INNER JOIN Departamento d ON d.IdDepartamento = e.IdDepartamento
+INNER JOIN Cargo c ON c.IdCargo = e.IdCargo
+WHERE e.IdDepartamento = @IdDepartamento
+ORDER BY v.IdVacaciones DESC;";
+
+            var lista = new List<EntidadVacacion>();
+
+            using (SqlConnection cn = ConexionDB.ObtenerConexion())
+            using (SqlCommand cmd = new SqlCommand(sql, cn))
+            {
+                cmd.Parameters.Add("@Top", SqlDbType.Int).Value = top;
+                cmd.Parameters.Add("@IdDepartamento", SqlDbType.Int).Value = idDepartamento;
+
+                using (SqlDataReader rd = cmd.ExecuteReader())
+                {
+                    while (rd.Read())
+                        lista.Add(MapVacacion(rd));
+                }
+            }
+
+            return lista;
+        }
+
+        public static List<EntidadVacacion> BuscarPorDepartamento(string criterio, string valor, int idDepartamento)
+        {
+            criterio = (criterio ?? "").Trim().ToUpperInvariant();
+            valor = (valor ?? "").Trim();
+
+            string where;
+            if (criterio == "CI")
+                where = "e.CI LIKE @Valor";
+            else if (criterio == "NOMBRE" || criterio == "NOMBRES")
+                where = "e.Nombres LIKE @Valor";
+            else if (criterio == "APELLIDOS" || criterio == "APELLIDO")
+                where = "(e.PrimerApellido LIKE @Valor OR e.SegundoApellido LIKE @Valor)";
+            else
+                where = "(e.CI LIKE @Valor OR e.Nombres LIKE @Valor OR e.PrimerApellido LIKE @Valor OR e.SegundoApellido LIKE @Valor)";
+
+            string sql = $@"
+SELECT
+    v.IdVacaciones,
+    v.IdEmpleado,
+    v.FechaInicio,
+    v.FechaFin,
+    e.CI,
+    e.Nombres,
+    e.PrimerApellido,
+    e.SegundoApellido,
+    d.Nombre AS DepartamentoNombre,
+    c.Nombre AS CargoNombre
+FROM Vacaciones v
+INNER JOIN Empleado e ON e.IdEmpleado = v.IdEmpleado
+INNER JOIN Departamento d ON d.IdDepartamento = e.IdDepartamento
+INNER JOIN Cargo c ON c.IdCargo = e.IdCargo
+WHERE e.IdDepartamento = @IdDepartamento
+  AND {where}
+ORDER BY v.IdVacaciones DESC;";
+
+            var lista = new List<EntidadVacacion>();
+
+            using (SqlConnection cn = ConexionDB.ObtenerConexion())
+            using (SqlCommand cmd = new SqlCommand(sql, cn))
+            {
+                cmd.Parameters.Add("@IdDepartamento", SqlDbType.Int).Value = idDepartamento;
+                cmd.Parameters.Add("@Valor", SqlDbType.NVarChar, 200).Value = "%" + valor + "%";
 
                 using (SqlDataReader rd = cmd.ExecuteReader())
                 {

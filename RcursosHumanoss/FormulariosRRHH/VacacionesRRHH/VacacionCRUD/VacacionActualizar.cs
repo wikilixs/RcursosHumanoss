@@ -213,10 +213,7 @@ namespace RcursosHumanoss.FormulariosRRHH.VacacionesRRHH.VacacionCRUD
         // =========================
         private void button3_Click(object sender, EventArgs e)
         {
-            var frm = new Vacacion();
-            Hide();
-            frm.FormClosed += (s, args) => Close();
-            frm.Show();
+            this.Close();
         }
 
         private void PintarGrid(List<EntidadVacacion> lista)

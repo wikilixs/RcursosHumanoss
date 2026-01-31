@@ -1,27 +1,13 @@
 ﻿using System;
 using System.Data;
 using System.Data.SqlClient;
+using RcursosHumanoss.EntidadesRRHH;
 
 namespace RcursosHumanoss.DALRRHH
 {
     internal static class LoginDAL
     {
-        internal sealed class LoginInfo
-        {
-            public int IdEmpleado { get; set; }
-            public string Email { get; set; } = "";
-            public string PasswordHash { get; set; } = ""; // aquí guardamos el hash leído desde Usuario.[Password]
-
-            public int IdDepartamento { get; set; }
-            public string Departamento { get; set; } = "";
-
-            public int IdCargo { get; set; }
-            public string Cargo { get; set; } = "";
-
-            public string NombreCompleto { get; set; } = "";
-        }
-
-        public static LoginInfo? ObtenerInfoPorEmail(string email)
+        public static EntidadLogin? ObtenerPorEmail(string email)
         {
             if (string.IsNullOrWhiteSpace(email))
                 return null;
@@ -29,7 +15,7 @@ namespace RcursosHumanoss.DALRRHH
             const string sql = @"
 SELECT TOP 1
     u.Email,
-    u.[Password] AS PasswordHash,   -- ✅ tu columna real
+    u.[Password] AS PasswordHash,   -- tu columna real
     e.IdEmpleado,
     e.Nombres,
     e.PrimerApellido,
@@ -51,19 +37,21 @@ WHERE u.Email = @Email;";
 
                 using (SqlDataReader rd = cmd.ExecuteReader())
                 {
-                    if (!rd.Read()) return null;
+                    if (!rd.Read())
+                        return null;
 
                     string nombres = rd["Nombres"]?.ToString() ?? "";
                     string pa = rd["PrimerApellido"]?.ToString() ?? "";
-                    string sa = rd["SegundoApellido"] == DBNull.Value ? "" : rd["SegundoApellido"]?.ToString() ?? "";
+                    string sa = (rd["SegundoApellido"] == DBNull.Value) ? "" : (rd["SegundoApellido"]?.ToString() ?? "");
                     string nombreCompleto = $"{nombres} {pa} {sa}".Trim();
 
-                    return new LoginInfo
+                    return new EntidadLogin
                     {
                         Email = rd["Email"]?.ToString() ?? "",
                         PasswordHash = rd["PasswordHash"]?.ToString() ?? "",
 
                         IdEmpleado = Convert.ToInt32(rd["IdEmpleado"]),
+
                         IdDepartamento = Convert.ToInt32(rd["IdDepartamento"]),
                         Departamento = rd["DepartamentoNombre"]?.ToString() ?? "",
 

@@ -1,18 +1,18 @@
-﻿// EmpleadoDAL.cs
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Data;
 using System.Data.SqlClient;
+using System.Globalization;
+using System.Text;
 using RcursosHumanoss.EntidadesRRHH;
-using RcursosHumanoss.SesionRRHH; // SesionActual
 
 namespace RcursosHumanoss.DALRRHH
 {
     internal static class EmpleadoDAL
     {
-        // =========================================================
-        //  LISTAR: últimos empleados ACTIVOS (para Empleado.cs)
-        // =========================================================
+        // ===========================
+        //  PUBLIC: LISTAR (ACTIVOS)
+        // ===========================
         public static List<EntidadEmpleado> ListarUltimosActivos(int top)
         {
             const string sql = @"
@@ -25,21 +25,23 @@ SELECT TOP (@Top)
     e.FechaNacimiento,
     e.Telefono,
     e.IdDepartamento,
-    e.IdCargo,
     d.Nombre AS DepartamentoNombre,
+    e.IdCargo,
     c.Nombre AS CargoNombre,
-    ISNULL(est.Nombre, 'Activo') AS EstadoActual
+    ISNULL(est.Nombre, 'Sin Estado') AS EstadoActual,
+    u.Email
 FROM Empleado e
 INNER JOIN Departamento d ON d.IdDepartamento = e.IdDepartamento
 INNER JOIN Cargo c ON c.IdCargo = e.IdCargo
+LEFT JOIN Usuario u ON u.IdEmpleado = e.IdEmpleado
 OUTER APPLY (
-    SELECT TOP 1 es.Nombre
+    SELECT TOP 1 es.IdEstado, es.Nombre
     FROM EstadoHistorial eh
     INNER JOIN Estado es ON es.IdEstado = eh.IdEstado
     WHERE eh.IdEmpleado = e.IdEmpleado
     ORDER BY eh.IdHistorial DESC
 ) est
-WHERE ISNULL(est.Nombre, 'Activo') = 'Activo'
+WHERE ISNULL(est.IdEstado, 1) = 1
 ORDER BY e.IdEmpleado DESC;";
 
             var lista = new List<EntidadEmpleado>();
@@ -50,41 +52,47 @@ ORDER BY e.IdEmpleado DESC;";
                 cmd.Parameters.Add("@Top", SqlDbType.Int).Value = top;
 
                 using (SqlDataReader rd = cmd.ExecuteReader())
+                {
                     while (rd.Read())
                         lista.Add(MapEmpleado(rd));
+                }
             }
 
             return lista;
         }
 
-        // =========================================================
-        //  BUSCAR + ESTADO (para Empleado.cs)
-        //  criterio: "CI" | "Nombres" | "Apellidos" | "TODOS"
-        //  estado: "Activo" | "Inactivo" | "Todos"
-        // =========================================================
+        // ==========================================
+        //  PUBLIC: BUSCAR (POR ESTADO)
+        //  criterio: CI / Nombres / Apellidos / TODOS
+        //  estado: Activo / Inactivo / Todos
+        // ==========================================
         public static List<EntidadEmpleado> BuscarConEstado(string criterio, string valor, string estado)
         {
             criterio = (criterio ?? "").Trim().ToUpperInvariant();
             valor = (valor ?? "").Trim();
-            estado = (estado ?? "").Trim().ToUpperInvariant();
+
+            int? idEstadoFiltro = NormalizarEstado(estado); // 1/2/null (null = todos)
 
             string whereCriterio;
             if (criterio == "CI")
                 whereCriterio = "e.CI LIKE @Valor";
-            else if (criterio == "NOMBRES" || criterio == "NOMBRE")
+            else if (criterio == "NOMBRE" || criterio == "NOMBRES")
                 whereCriterio = "e.Nombres LIKE @Valor";
             else if (criterio == "APELLIDOS" || criterio == "APELLIDO")
                 whereCriterio = "(e.PrimerApellido LIKE @Valor OR e.SegundoApellido LIKE @Valor)";
-            else // "TODOS"
+            else
                 whereCriterio = "(e.CI LIKE @Valor OR e.Nombres LIKE @Valor OR e.PrimerApellido LIKE @Valor OR e.SegundoApellido LIKE @Valor)";
 
-            string whereEstado;
-            if (estado == "ACTIVO")
-                whereEstado = "ISNULL(est.Nombre, 'Activo') = 'Activo'";
-            else if (estado == "INACTIVO")
-                whereEstado = "ISNULL(est.Nombre, 'Activo') = 'Inactivo'";
-            else
-                whereEstado = "1=1"; // Todos
+            // Si criterio viene como "TODOS" y valor vacío (caso: ver activos/inactivos/todos)
+            bool sinFiltroTexto = (criterio == "TODOS" || criterio == "") && string.IsNullOrWhiteSpace(valor);
+
+            string whereEstado = idEstadoFiltro.HasValue
+                ? "AND ISNULL(est.IdEstado, 1) = @IdEstado"
+                : "";
+
+            string whereFinal = sinFiltroTexto
+                ? "1=1"
+                : whereCriterio;
 
             string sql = $@"
 SELECT
@@ -96,22 +104,24 @@ SELECT
     e.FechaNacimiento,
     e.Telefono,
     e.IdDepartamento,
-    e.IdCargo,
     d.Nombre AS DepartamentoNombre,
+    e.IdCargo,
     c.Nombre AS CargoNombre,
-    ISNULL(est.Nombre, 'Activo') AS EstadoActual
+    ISNULL(est.Nombre, 'Sin Estado') AS EstadoActual,
+    u.Email
 FROM Empleado e
 INNER JOIN Departamento d ON d.IdDepartamento = e.IdDepartamento
 INNER JOIN Cargo c ON c.IdCargo = e.IdCargo
+LEFT JOIN Usuario u ON u.IdEmpleado = e.IdEmpleado
 OUTER APPLY (
-    SELECT TOP 1 es.Nombre
+    SELECT TOP 1 es.IdEstado, es.Nombre
     FROM EstadoHistorial eh
     INNER JOIN Estado es ON es.IdEstado = eh.IdEstado
     WHERE eh.IdEmpleado = e.IdEmpleado
     ORDER BY eh.IdHistorial DESC
 ) est
-WHERE {whereCriterio}
-  AND {whereEstado}
+WHERE {whereFinal}
+{whereEstado}
 ORDER BY e.IdEmpleado DESC;";
 
             var lista = new List<EntidadEmpleado>();
@@ -119,47 +129,45 @@ ORDER BY e.IdEmpleado DESC;";
             using (SqlConnection cn = ConexionDB.ObtenerConexion())
             using (SqlCommand cmd = new SqlCommand(sql, cn))
             {
-                cmd.Parameters.Add("@Valor", SqlDbType.NVarChar, 200).Value = "%" + valor + "%";
+                if (!sinFiltroTexto)
+                    cmd.Parameters.Add("@Valor", SqlDbType.NVarChar, 200).Value = "%" + valor + "%";
+
+                if (idEstadoFiltro.HasValue)
+                    cmd.Parameters.Add("@IdEstado", SqlDbType.Int).Value = idEstadoFiltro.Value;
 
                 using (SqlDataReader rd = cmd.ExecuteReader())
+                {
                     while (rd.Read())
                         lista.Add(MapEmpleado(rd));
+                }
             }
 
             return lista;
         }
 
-        // =========================================================
-        //  INSERTAR: Empleado + Usuario automático (para EmpleadoAgregar.cs)
-        //  Email: nombre.apellido@tiendaboli.com
-        //  PasswordHash: BCrypt(CI)
-        //  Estado inicial: Activo (IdEstado=1) en EstadoHistorial
-        // =========================================================
+        // ===========================
+        //  INSERTAR + CREAR USUARIO
+        //  Email estilo: juan.mamani@tiendaboli.com
+        // ===========================
         public static int InsertarUsuarioAuto(EntidadEmpleado emp)
         {
             if (emp == null) throw new ArgumentNullException(nameof(emp));
 
-            // Validaciones mínimas (puedes ampliar)
+            // Validaciones mínimas
             if (string.IsNullOrWhiteSpace(emp.Nombres)) throw new ArgumentException("Nombres es obligatorio.");
             if (string.IsNullOrWhiteSpace(emp.PrimerApellido)) throw new ArgumentException("PrimerApellido es obligatorio.");
             if (string.IsNullOrWhiteSpace(emp.CI)) throw new ArgumentException("CI es obligatorio.");
             if (string.IsNullOrWhiteSpace(emp.Telefono)) throw new ArgumentException("Telefono es obligatorio.");
+            if (emp.IdDepartamento <= 0) throw new ArgumentException("IdDepartamento inválido.");
+            if (emp.IdCargo <= 0) throw new ArgumentException("IdCargo inválido.");
 
-            const string sqlEmpleado = @"
-INSERT INTO Empleado
-(Nombres, PrimerApellido, SegundoApellido, CI, FechaNacimiento, Telefono, IdDepartamento, IdCargo)
-VALUES
-(@Nombres, @PrimerApellido, @SegundoApellido, @CI, @FechaNacimiento, @Telefono, @IdDepartamento, @IdCargo);
-SELECT CAST(SCOPE_IDENTITY() AS INT);";
+            // Generar email
+            string email = GenerarEmail(emp.Nombres, emp.PrimerApellido);
 
-            const string sqlUsuario = @"
-INSERT INTO Usuario (Email, PasswordHash, IdEmpleado)
-VALUES (@Email, @PasswordHash, @IdEmpleado);";
-
-            // Activo=1 / Inactivo=2 (según tu modelo)
-            const string sqlEstado = @"
-INSERT INTO EstadoHistorial (IdEmpleado, IdEstado, Fecha)
-VALUES (@IdEmpleado, @IdEstado, GETDATE());";
+            // Password por defecto (hash)
+            // Puedes cambiarla luego por algo que generes aleatorio.
+            string passwordPlano = "123456";
+            string passwordHash = BCrypt.Net.BCrypt.HashPassword(passwordPlano);
 
             using (SqlConnection cn = ConexionDB.ObtenerConexion())
             using (SqlTransaction tx = cn.BeginTransaction())
@@ -167,42 +175,56 @@ VALUES (@IdEmpleado, @IdEstado, GETDATE());";
                 try
                 {
                     // 1) Insert Empleado
+                    const string sqlEmp = @"
+INSERT INTO Empleado (Nombres, PrimerApellido, SegundoApellido, CI, FechaNacimiento, Telefono, IdDepartamento, IdCargo)
+VALUES (@Nombres, @PA, @SA, @CI, @FN, @Tel, @IdDep, @IdCargo);
+SELECT CAST(SCOPE_IDENTITY() AS INT);";
+
                     int idEmpleado;
-                    using (SqlCommand cmd = new SqlCommand(sqlEmpleado, cn, tx))
+
+                    using (SqlCommand cmdEmp = new SqlCommand(sqlEmp, cn, tx))
                     {
-                        cmd.Parameters.Add("@Nombres", SqlDbType.NVarChar, 100).Value = emp.Nombres.Trim();
-                        cmd.Parameters.Add("@PrimerApellido", SqlDbType.NVarChar, 100).Value = emp.PrimerApellido.Trim();
-                        cmd.Parameters.Add("@SegundoApellido", SqlDbType.NVarChar, 100).Value =
+                        cmdEmp.Parameters.Add("@Nombres", SqlDbType.NVarChar, 200).Value = emp.Nombres.Trim();
+                        cmdEmp.Parameters.Add("@PA", SqlDbType.NVarChar, 120).Value = emp.PrimerApellido.Trim();
+                        cmdEmp.Parameters.Add("@SA", SqlDbType.NVarChar, 120).Value =
                             string.IsNullOrWhiteSpace(emp.SegundoApellido) ? (object)DBNull.Value : emp.SegundoApellido.Trim();
-                        cmd.Parameters.Add("@CI", SqlDbType.NVarChar, 50).Value = emp.CI.Trim();
-                        cmd.Parameters.Add("@FechaNacimiento", SqlDbType.Date).Value = emp.FechaNacimiento.Date;
-                        cmd.Parameters.Add("@Telefono", SqlDbType.NVarChar, 50).Value = emp.Telefono.Trim();
-                        cmd.Parameters.Add("@IdDepartamento", SqlDbType.Int).Value = emp.IdDepartamento;
-                        cmd.Parameters.Add("@IdCargo", SqlDbType.Int).Value = emp.IdCargo;
 
-                        object r = cmd.ExecuteScalar();
+                        cmdEmp.Parameters.Add("@CI", SqlDbType.NVarChar, 50).Value = emp.CI.Trim();
+                        cmdEmp.Parameters.Add("@FN", SqlDbType.Date).Value = emp.FechaNacimiento.Date;
+                        cmdEmp.Parameters.Add("@Tel", SqlDbType.NVarChar, 50).Value = emp.Telefono.Trim();
+                        cmdEmp.Parameters.Add("@IdDep", SqlDbType.Int).Value = emp.IdDepartamento;
+                        cmdEmp.Parameters.Add("@IdCargo", SqlDbType.Int).Value = emp.IdCargo;
+
+                        object r = cmdEmp.ExecuteScalar();
                         idEmpleado = (r == null || r == DBNull.Value) ? 0 : Convert.ToInt32(r);
-                        if (idEmpleado <= 0) throw new Exception("No se pudo insertar el empleado.");
                     }
 
-                    // 2) Estado inicial (Activo=1)
-                    using (SqlCommand cmd = new SqlCommand(sqlEstado, cn, tx))
+                    if (idEmpleado <= 0)
+                        throw new Exception("No se pudo insertar el empleado.");
+
+                    // 2) Insert EstadoHistorial -> Activo(1)
+                    const string sqlEstado = @"
+INSERT INTO EstadoHistorial (IdEmpleado, IdEstado, FechaCambio)
+VALUES (@IdEmpleado, 1, GETDATE());";
+
+                    using (SqlCommand cmdEst = new SqlCommand(sqlEstado, cn, tx))
                     {
-                        cmd.Parameters.Add("@IdEmpleado", SqlDbType.Int).Value = idEmpleado;
-                        cmd.Parameters.Add("@IdEstado", SqlDbType.Int).Value = 1; // Activo
-                        cmd.ExecuteNonQuery();
+                        cmdEst.Parameters.Add("@IdEmpleado", SqlDbType.Int).Value = idEmpleado;
+                        cmdEst.ExecuteNonQuery();
                     }
 
-                    // 3) Insert Usuario (email + bcrypt(CI))
-                    string email = GenerarEmail(emp.Nombres, emp.PrimerApellido);
-                    string passwordHash = BCrypt.Net.BCrypt.HashPassword(emp.CI.Trim());
+                    // 3) Insert Usuario
+                    // Si Email ya existe, falla con excepción (unique) o lo puedes validar antes.
+                    const string sqlUser = @"
+INSERT INTO Usuario (Email, [Password], IdEmpleado)
+VALUES (@Email, @Pass, @IdEmpleado);";
 
-                    using (SqlCommand cmd = new SqlCommand(sqlUsuario, cn, tx))
+                    using (SqlCommand cmdUser = new SqlCommand(sqlUser, cn, tx))
                     {
-                        cmd.Parameters.Add("@Email", SqlDbType.NVarChar, 200).Value = email;
-                        cmd.Parameters.Add("@PasswordHash", SqlDbType.NVarChar, 300).Value = passwordHash;
-                        cmd.Parameters.Add("@IdEmpleado", SqlDbType.Int).Value = idEmpleado;
-                        cmd.ExecuteNonQuery();
+                        cmdUser.Parameters.Add("@Email", SqlDbType.NVarChar, 200).Value = email;
+                        cmdUser.Parameters.Add("@Pass", SqlDbType.NVarChar, -1).Value = passwordHash;
+                        cmdUser.Parameters.Add("@IdEmpleado", SqlDbType.Int).Value = idEmpleado;
+                        cmdUser.ExecuteNonQuery();
                     }
 
                     tx.Commit();
@@ -217,122 +239,22 @@ VALUES (@IdEmpleado, @IdEstado, GETDATE());";
         }
 
         // =========================================================
-        //  ACTUALIZAR datos del empleado (para EmpleadoActualizar)
-        //  Nota: el cambio Activo/Inactivo se hace con CambiarEstado(...)
+        //  SUPERVISOR: LISTAR POR DEPARTAMENTO
         // =========================================================
-        public static bool Actualizar(EntidadEmpleado emp)
-        {
-            if (emp == null) throw new ArgumentNullException(nameof(emp));
-            if (emp.IdEmpleado <= 0) throw new ArgumentException("IdEmpleado inválido.");
 
-            const string sql = @"
-UPDATE Empleado
-SET Nombres = @Nombres,
-    PrimerApellido = @PrimerApellido,
-    SegundoApellido = @SegundoApellido,
-    CI = @CI,
-    FechaNacimiento = @FechaNacimiento,
-    Telefono = @Telefono,
-    IdDepartamento = @IdDepartamento,
-    IdCargo = @IdCargo
-WHERE IdEmpleado = @IdEmpleado;";
-
-            using (SqlConnection cn = ConexionDB.ObtenerConexion())
-            using (SqlCommand cmd = new SqlCommand(sql, cn))
-            {
-                cmd.Parameters.Add("@IdEmpleado", SqlDbType.Int).Value = emp.IdEmpleado;
-                cmd.Parameters.Add("@Nombres", SqlDbType.NVarChar, 100).Value = emp.Nombres?.Trim() ?? "";
-                cmd.Parameters.Add("@PrimerApellido", SqlDbType.NVarChar, 100).Value = emp.PrimerApellido?.Trim() ?? "";
-                cmd.Parameters.Add("@SegundoApellido", SqlDbType.NVarChar, 100).Value =
-                    string.IsNullOrWhiteSpace(emp.SegundoApellido) ? (object)DBNull.Value : emp.SegundoApellido.Trim();
-                cmd.Parameters.Add("@CI", SqlDbType.NVarChar, 50).Value = emp.CI?.Trim() ?? "";
-                cmd.Parameters.Add("@FechaNacimiento", SqlDbType.Date).Value = emp.FechaNacimiento.Date;
-                cmd.Parameters.Add("@Telefono", SqlDbType.NVarChar, 50).Value = emp.Telefono?.Trim() ?? "";
-                cmd.Parameters.Add("@IdDepartamento", SqlDbType.Int).Value = emp.IdDepartamento;
-                cmd.Parameters.Add("@IdCargo", SqlDbType.Int).Value = emp.IdCargo;
-
-                return cmd.ExecuteNonQuery() > 0;
-            }
-        }
-
-        // =========================================================
-        //  CAMBIAR ESTADO: Activo=1 / Inactivo=2 (inserta historial)
-        // =========================================================
-        public static bool CambiarEstado(int idEmpleado, int idEstado) // 1=Activo, 2=Inactivo
-        {
-            if (idEmpleado <= 0) throw new ArgumentException("IdEmpleado inválido.");
-            if (idEstado != 1 && idEstado != 2) throw new ArgumentException("IdEstado debe ser 1 (Activo) o 2 (Inactivo).");
-
-            const string sql = @"
-INSERT INTO EstadoHistorial (IdEmpleado, IdEstado, Fecha)
-VALUES (@IdEmpleado, @IdEstado, GETDATE());";
-
-            using (SqlConnection cn = ConexionDB.ObtenerConexion())
-            using (SqlCommand cmd = new SqlCommand(sql, cn))
-            {
-                cmd.Parameters.Add("@IdEmpleado", SqlDbType.Int).Value = idEmpleado;
-                cmd.Parameters.Add("@IdEstado", SqlDbType.Int).Value = idEstado;
-                return cmd.ExecuteNonQuery() > 0;
-            }
-        }
-
-        // =========================================================
-        //  BUSCAR POR CI (útil en Actualizar / buscar exacto)
-        // =========================================================
-        public static EntidadEmpleado? BuscarPorCIExacto(string ci)
-        {
-            ci = (ci ?? "").Trim();
-            if (ci.Length == 0) return null;
-
-            const string sql = @"
-SELECT TOP 1
-    e.IdEmpleado,
-    e.Nombres,
-    e.PrimerApellido,
-    e.SegundoApellido,
-    e.CI,
-    e.FechaNacimiento,
-    e.Telefono,
-    e.IdDepartamento,
-    e.IdCargo,
-    d.Nombre AS DepartamentoNombre,
-    c.Nombre AS CargoNombre,
-    ISNULL(est.Nombre, 'Activo') AS EstadoActual
-FROM Empleado e
-INNER JOIN Departamento d ON d.IdDepartamento = e.IdDepartamento
-INNER JOIN Cargo c ON c.IdCargo = e.IdCargo
-OUTER APPLY (
-    SELECT TOP 1 es.Nombre
-    FROM EstadoHistorial eh
-    INNER JOIN Estado es ON es.IdEstado = eh.IdEstado
-    WHERE eh.IdEmpleado = e.IdEmpleado
-    ORDER BY eh.IdHistorial DESC
-) est
-WHERE e.CI = @CI
-ORDER BY e.IdEmpleado DESC;";
-
-            using (SqlConnection cn = ConexionDB.ObtenerConexion())
-            using (SqlCommand cmd = new SqlCommand(sql, cn))
-            {
-                cmd.Parameters.Add("@CI", SqlDbType.NVarChar, 50).Value = ci;
-
-                using (SqlDataReader rd = cmd.ExecuteReader())
-                {
-                    if (!rd.Read()) return null;
-                    return MapEmpleado(rd);
-                }
-            }
-        }
-
-        // =========================================================
-        //  MI ÁREA: últimos activos (para EmpleadoArea.cs)
-        //  Usa SesionActual.IdDepartamento internamente
-        // =========================================================
+        // Overload: toma IdDepartamento desde sesión (sin depender del nombre exacto)
         public static List<EntidadEmpleado> ListarUltimosActivosPorDepartamento(int top)
         {
-            SesionActual.AsegurarSesion();
-            if (SesionActual.IdDepartamento <= 0) throw new InvalidOperationException("Sesión sin IdDepartamento.");
+            int idDep = ObtenerIdDepartamentoSesion();
+            if (idDep <= 0)
+                throw new InvalidOperationException("No se pudo obtener IdDepartamento desde la sesión (EntidadSesion/EnridadSesion/SesionActual).");
 
+            return ListarUltimosActivosPorDepartamento(top, idDep);
+        }
+
+        // Overload: explícito (si tu form lo llama con idDep)
+        public static List<EntidadEmpleado> ListarUltimosActivosPorDepartamento(int top, int idDepartamento)
+        {
             const string sql = @"
 SELECT TOP (@Top)
     e.IdEmpleado,
@@ -343,22 +265,24 @@ SELECT TOP (@Top)
     e.FechaNacimiento,
     e.Telefono,
     e.IdDepartamento,
-    e.IdCargo,
     d.Nombre AS DepartamentoNombre,
+    e.IdCargo,
     c.Nombre AS CargoNombre,
-    ISNULL(est.Nombre, 'Activo') AS EstadoActual
+    ISNULL(est.Nombre, 'Sin Estado') AS EstadoActual,
+    u.Email
 FROM Empleado e
 INNER JOIN Departamento d ON d.IdDepartamento = e.IdDepartamento
 INNER JOIN Cargo c ON c.IdCargo = e.IdCargo
+LEFT JOIN Usuario u ON u.IdEmpleado = e.IdEmpleado
 OUTER APPLY (
-    SELECT TOP 1 es.Nombre
+    SELECT TOP 1 es.IdEstado, es.Nombre
     FROM EstadoHistorial eh
     INNER JOIN Estado es ON es.IdEstado = eh.IdEstado
     WHERE eh.IdEmpleado = e.IdEmpleado
     ORDER BY eh.IdHistorial DESC
 ) est
 WHERE e.IdDepartamento = @IdDep
-  AND ISNULL(est.Nombre, 'Activo') = 'Activo'
+  AND ISNULL(est.IdEstado, 1) = 1
 ORDER BY e.IdEmpleado DESC;";
 
             var lista = new List<EntidadEmpleado>();
@@ -367,31 +291,39 @@ ORDER BY e.IdEmpleado DESC;";
             using (SqlCommand cmd = new SqlCommand(sql, cn))
             {
                 cmd.Parameters.Add("@Top", SqlDbType.Int).Value = top;
-                cmd.Parameters.Add("@IdDep", SqlDbType.Int).Value = SesionActual.IdDepartamento;
+                cmd.Parameters.Add("@IdDep", SqlDbType.Int).Value = idDepartamento;
 
                 using (SqlDataReader rd = cmd.ExecuteReader())
+                {
                     while (rd.Read())
                         lista.Add(MapEmpleado(rd));
+                }
             }
 
             return lista;
         }
 
         // =========================================================
-        //  MI ÁREA: buscar dentro del departamento (para EmpleadoArea.cs)
+        //  SUPERVISOR: BUSCAR EN SU DEPARTAMENTO
         // =========================================================
         public static List<EntidadEmpleado> BuscarEnDepartamento(string criterio, string valor)
         {
-            SesionActual.AsegurarSesion();
-            if (SesionActual.IdDepartamento <= 0) throw new InvalidOperationException("Sesión sin IdDepartamento.");
+            int idDep = ObtenerIdDepartamentoSesion();
+            if (idDep <= 0)
+                throw new InvalidOperationException("No se pudo obtener IdDepartamento desde la sesión (EntidadSesion/EnridadSesion/SesionActual).");
 
+            return BuscarEnDepartamento(criterio, valor, idDep);
+        }
+
+        public static List<EntidadEmpleado> BuscarEnDepartamento(string criterio, string valor, int idDepartamento)
+        {
             criterio = (criterio ?? "").Trim().ToUpperInvariant();
             valor = (valor ?? "").Trim();
 
             string whereCriterio;
             if (criterio == "CI")
                 whereCriterio = "e.CI LIKE @Valor";
-            else if (criterio == "NOMBRES" || criterio == "NOMBRE")
+            else if (criterio == "NOMBRE" || criterio == "NOMBRES")
                 whereCriterio = "e.Nombres LIKE @Valor";
             else if (criterio == "APELLIDOS" || criterio == "APELLIDO")
                 whereCriterio = "(e.PrimerApellido LIKE @Valor OR e.SegundoApellido LIKE @Valor)";
@@ -408,15 +340,17 @@ SELECT
     e.FechaNacimiento,
     e.Telefono,
     e.IdDepartamento,
-    e.IdCargo,
     d.Nombre AS DepartamentoNombre,
+    e.IdCargo,
     c.Nombre AS CargoNombre,
-    ISNULL(est.Nombre, 'Activo') AS EstadoActual
+    ISNULL(est.Nombre, 'Sin Estado') AS EstadoActual,
+    u.Email
 FROM Empleado e
 INNER JOIN Departamento d ON d.IdDepartamento = e.IdDepartamento
 INNER JOIN Cargo c ON c.IdCargo = e.IdCargo
+LEFT JOIN Usuario u ON u.IdEmpleado = e.IdEmpleado
 OUTER APPLY (
-    SELECT TOP 1 es.Nombre
+    SELECT TOP 1 es.IdEstado, es.Nombre
     FROM EstadoHistorial eh
     INNER JOIN Estado es ON es.IdEstado = eh.IdEstado
     WHERE eh.IdEmpleado = e.IdEmpleado
@@ -431,12 +365,14 @@ ORDER BY e.IdEmpleado DESC;";
             using (SqlConnection cn = ConexionDB.ObtenerConexion())
             using (SqlCommand cmd = new SqlCommand(sql, cn))
             {
-                cmd.Parameters.Add("@IdDep", SqlDbType.Int).Value = SesionActual.IdDepartamento;
+                cmd.Parameters.Add("@IdDep", SqlDbType.Int).Value = idDepartamento;
                 cmd.Parameters.Add("@Valor", SqlDbType.NVarChar, 200).Value = "%" + valor + "%";
 
                 using (SqlDataReader rd = cmd.ExecuteReader())
+                {
                     while (rd.Read())
                         lista.Add(MapEmpleado(rd));
+                }
             }
 
             return lista;
@@ -447,31 +383,115 @@ ORDER BY e.IdEmpleado DESC;";
         // =========================================================
         private static EntidadEmpleado MapEmpleado(SqlDataReader rd)
         {
-            string SafeString(string col) => rd[col] == DBNull.Value ? "" : rd[col].ToString();
+            string Safe(string col) => rd[col] == DBNull.Value ? "" : rd[col].ToString();
 
             return new EntidadEmpleado
             {
                 IdEmpleado = Convert.ToInt32(rd["IdEmpleado"]),
-                Nombres = SafeString("Nombres"),
-                PrimerApellido = SafeString("PrimerApellido"),
-                SegundoApellido = SafeString("SegundoApellido"),
-                CI = SafeString("CI"),
+                Nombres = Safe("Nombres"),
+                PrimerApellido = Safe("PrimerApellido"),
+                SegundoApellido = Safe("SegundoApellido"),
+                CI = Safe("CI"),
                 FechaNacimiento = Convert.ToDateTime(rd["FechaNacimiento"]),
-                Telefono = SafeString("Telefono"),
+                Telefono = Safe("Telefono"),
                 IdDepartamento = Convert.ToInt32(rd["IdDepartamento"]),
                 IdCargo = Convert.ToInt32(rd["IdCargo"]),
-                DepartamentoNombre = SafeString("DepartamentoNombre"),
-                CargoNombre = SafeString("CargoNombre"),
-                EstadoActual = SafeString("EstadoActual"),
-                Email = "" // si luego haces JOIN con Usuario, aquí lo mapeas
+
+                DepartamentoNombre = Safe("DepartamentoNombre"),
+                CargoNombre = Safe("CargoNombre"),
+                EstadoActual = Safe("EstadoActual"),
+                Email = Safe("Email")
             };
+        }
+
+        // Activo=1, Inactivo=2, Todos=null
+        private static int? NormalizarEstado(string estado)
+        {
+            string s = (estado ?? "").Trim().ToLowerInvariant();
+
+            if (s.Contains("activo")) return 1;
+            if (s.Contains("inactivo")) return 2;
+            if (s.Contains("todos")) return null;
+
+            // si viene vacío -> por defecto Activo (como tu pantalla)
+            if (string.IsNullOrWhiteSpace(s)) return 1;
+
+            // cualquier cosa rara -> null (no filtrar)
+            return null;
         }
 
         private static string GenerarEmail(string nombres, string primerApellido)
         {
-            string nom = (nombres ?? "").Trim().Split(' ')[0].ToLowerInvariant();
-            string ape = (primerApellido ?? "").Trim().ToLowerInvariant();
-            return $"{nom}.{ape}@tiendaboli.com";
+            string primerNombre = ExtraerPrimerToken(nombres);
+            string apellido = ExtraerPrimerToken(primerApellido);
+
+            string user = $"{primerNombre}.{apellido}".ToLowerInvariant();
+            user = QuitarAcentos(user);
+            user = user.Replace(" ", "").Replace("'", "").Replace("\"", "");
+
+            return $"{user}@tiendaboli.com";
+        }
+
+        private static string ExtraerPrimerToken(string s)
+        {
+            s = (s ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(s)) return "user";
+            string[] parts = s.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+            return parts.Length > 0 ? parts[0] : s;
+        }
+
+        private static string QuitarAcentos(string input)
+        {
+            if (string.IsNullOrEmpty(input)) return "";
+            string normalized = input.Normalize(NormalizationForm.FormD);
+            var sb = new StringBuilder();
+
+            foreach (char c in normalized)
+            {
+                var uc = CharUnicodeInfo.GetUnicodeCategory(c);
+                if (uc != UnicodeCategory.NonSpacingMark)
+                    sb.Append(c);
+            }
+
+            return sb.ToString().Normalize(NormalizationForm.FormC);
+        }
+
+        // Obtiene IdDepartamento desde sesión sin depender del nombre exacto de la clase.
+        // Busca en este orden:
+        // - RcursosHumanoss.SesionRRHH.EnridadSesion
+        // - RcursosHumanoss.SesionRRHH.EntidadSesion
+        // - RcursosHumanoss.SesionRRHH.SesionActual
+        private static int ObtenerIdDepartamentoSesion()
+        {
+            int id = TryGetStaticInt("RcursosHumanoss.SesionRRHH.EnridadSesion", "IdDepartamento");
+            if (id > 0) return id;
+
+            id = TryGetStaticInt("RcursosHumanoss.SesionRRHH.EntidadSesion", "IdDepartamento");
+            if (id > 0) return id;
+
+            id = TryGetStaticInt("RcursosHumanoss.SesionRRHH.SesionActual", "IdDepartamento");
+            return id;
+        }
+
+        private static int TryGetStaticInt(string fullTypeName, string propName)
+        {
+            try
+            {
+                Type t = Type.GetType(fullTypeName);
+                if (t == null) return 0;
+
+                var p = t.GetProperty(propName, System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+                if (p == null) return 0;
+
+                object v = p.GetValue(null);
+                if (v == null) return 0;
+
+                return Convert.ToInt32(v);
+            }
+            catch
+            {
+                return 0;
+            }
         }
     }
 }

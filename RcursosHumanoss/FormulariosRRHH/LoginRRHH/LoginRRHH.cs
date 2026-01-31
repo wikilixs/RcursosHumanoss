@@ -1,7 +1,8 @@
 ﻿using System;
-using System.ComponentModel; 
 using System.Windows.Forms;
 using RcursosHumanoss.DALRRHH;
+using RcursosHumanoss.EntidadesRRHH;
+using RcursosHumanoss.SesionRRHH; // ✅ EntidadSesion
 using RcursosHumanoss.FormulariosRRHH.MenusRRHH;
 
 namespace RcursosHumanoss.FormulariosRRHH.LoginRRHH
@@ -11,31 +12,22 @@ namespace RcursosHumanoss.FormulariosRRHH.LoginRRHH
         public LoginRRHH()
         {
             InitializeComponent();
-            Load += LoginRRHH_Load;
-        }
-
-        private void LoginRRHH_Load(object? sender, EventArgs e)
-        {
-            // ✅ Evita que el diseñador ejecute lógica en tiempo de diseño
-            if (LicenseManager.UsageMode == LicenseUsageMode.Designtime) return;
 
             textBox2.UseSystemPasswordChar = true;
             label1.Text = "Email";
             label2.Text = "Contraseña";
             button1.Text = "Iniciar sesión";
 
-            button1.Click -= button1_Click; // evita doble suscripción
             button1.Click += button1_Click;
-
             AcceptButton = button1;
         }
 
-        private void button1_Click(object? sender, EventArgs e)
+        private void button1_Click(object sender, EventArgs e)
         {
             string email = textBox1.Text.Trim();
-            string passwordPlano = textBox2.Text;
+            string password = textBox2.Text;
 
-            if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(passwordPlano))
+            if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(password))
             {
                 MessageBox.Show("Debe ingresar Email y Contraseña.", "Validación",
                     MessageBoxButtons.OK, MessageBoxIcon.Warning);
@@ -44,8 +36,7 @@ namespace RcursosHumanoss.FormulariosRRHH.LoginRRHH
 
             try
             {
-                // ✅ Este método DEBE existir en LoginDAL
-                var info = LoginDAL.ObtenerInfoPorEmail(email);
+                EntidadLogin? info = LoginDAL.ObtenerPorEmail(email);
 
                 if (info == null)
                 {
@@ -54,8 +45,7 @@ namespace RcursosHumanoss.FormulariosRRHH.LoginRRHH
                     return;
                 }
 
-                // ✅ BCrypt (el hash está en DB)
-                bool ok = BCrypt.Net.BCrypt.Verify(passwordPlano, info.PasswordHash);
+                bool ok = BCrypt.Net.BCrypt.Verify(password, info.PasswordHash);
 
                 if (!ok)
                 {
@@ -63,6 +53,17 @@ namespace RcursosHumanoss.FormulariosRRHH.LoginRRHH
                         MessageBoxButtons.OK, MessageBoxIcon.Error);
                     return;
                 }
+
+                // ✅ Cargar sesión
+                EntidadSesion.Iniciar(
+                    info.IdEmpleado,
+                    info.Email,
+                    info.IdDepartamento,
+                    info.Departamento,
+                    info.IdCargo,
+                    info.Cargo,
+                    info.NombreCompleto
+                );
 
                 AbrirMenuSegunCargo(info.Cargo, info.Departamento);
             }
@@ -75,8 +76,8 @@ namespace RcursosHumanoss.FormulariosRRHH.LoginRRHH
 
         private void AbrirMenuSegunCargo(string cargo, string departamento)
         {
-            string cargoLower = (cargo ?? "").Trim().ToLowerInvariant();
-            string depLower = (departamento ?? "").Trim().ToLowerInvariant();
+            string cargoLower = (cargo ?? string.Empty).Trim().ToLowerInvariant();
+            string depLower = (departamento ?? string.Empty).Trim().ToLowerInvariant();
 
             Form menu;
 
@@ -86,7 +87,7 @@ namespace RcursosHumanoss.FormulariosRRHH.LoginRRHH
                 menu = new FormMenuRRHH();
             }
             else if (cargoLower.Contains("supervisor") || cargoLower.Contains("encargado")
-                  || cargoLower.Contains("coordinador") || cargoLower.Contains("jefe de área"))
+                     || cargoLower.Contains("coordinador") || cargoLower.Contains("jefe de área"))
             {
                 menu = new FormMenuSupervisores();
             }

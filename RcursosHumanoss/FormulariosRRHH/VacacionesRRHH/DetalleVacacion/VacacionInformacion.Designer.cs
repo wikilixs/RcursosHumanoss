@@ -28,20 +28,12 @@
         /// </summary>
         private void InitializeComponent()
         {
-            button5 = new Button();
             dataGridView1 = new DataGridView();
             panel1 = new Panel();
+            button1 = new Button();
+            button2 = new Button();
             ((System.ComponentModel.ISupportInitialize)dataGridView1).BeginInit();
             SuspendLayout();
-            // 
-            // button5
-            // 
-            button5.Location = new Point(622, 407);
-            button5.Name = "button5";
-            button5.Size = new Size(131, 32);
-            button5.TabIndex = 34;
-            button5.Text = "button5";
-            button5.UseVisualStyleBackColor = true;
             // 
             // dataGridView1
             // 
@@ -60,12 +52,31 @@
             panel1.Size = new Size(798, 129);
             panel1.TabIndex = 26;
             // 
+            // button1
+            // 
+            button1.Location = new Point(342, 398);
+            button1.Name = "button1";
+            button1.Size = new Size(115, 40);
+            button1.TabIndex = 28;
+            button1.Text = "button1";
+            button1.UseVisualStyleBackColor = true;
+            // 
+            // button2
+            // 
+            button2.Location = new Point(639, 398);
+            button2.Name = "button2";
+            button2.Size = new Size(114, 40);
+            button2.TabIndex = 29;
+            button2.Text = "button2";
+            button2.UseVisualStyleBackColor = true;
+            // 
             // VacacionInformacion
             // 
             AutoScaleDimensions = new SizeF(8F, 20F);
             AutoScaleMode = AutoScaleMode.Font;
             ClientSize = new Size(800, 450);
-            Controls.Add(button5);
+            Controls.Add(button2);
+            Controls.Add(button1);
             Controls.Add(dataGridView1);
             Controls.Add(panel1);
             Name = "VacacionInformacion";
@@ -75,9 +86,9 @@
         }
 
         #endregion
-
-        private Button button5;
         private DataGridView dataGridView1;
         private Panel panel1;
+        private Button button1;
+        private Button button2;
     }
 }

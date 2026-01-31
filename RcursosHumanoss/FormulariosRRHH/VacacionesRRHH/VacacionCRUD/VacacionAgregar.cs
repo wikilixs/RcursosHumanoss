@@ -4,9 +4,6 @@ using System.Windows.Forms;
 using RcursosHumanoss.DALRRHH;
 using RcursosHumanoss.EntidadesRRHH;
 
-// Ajusta si tu form de lista se llama diferente o está en otro namespace
-using RcursosHumanoss.FormulariosRRHH.VacacionesRRHH.VacionesCRUD;
-
 namespace RcursosHumanoss.FormulariosRRHH.VacacionesRRHH.VacacionCRUD
 {
     public partial class VacacionAgregar : Form
@@ -18,12 +15,12 @@ namespace RcursosHumanoss.FormulariosRRHH.VacacionesRRHH.VacacionCRUD
             InitializeComponent();
 
             // Eventos (sin tocar Designer)
-            button1.Click += button1_Click; // Agregar
-            button2.Click += button2_Click; // Limpiar
-            button3.Click += button3_Click; // Volver
-            button4.Click += button4_Click; // (opcional) Limpiar o Volver
+            button1.Click += Button1_Click; // Buscar
+            button2.Click += Button2_Click; // Limpiar
+            button3.Click += Button3_Click; // Agregar
+            button4.Click += Button4_Click; // Salir
 
-            dataGridView1.CellClick += dataGridView1_CellClick;
+            dataGridView1.CellClick += DataGridView1_CellClick;
         }
 
         protected override void OnLoad(EventArgs e)
@@ -36,19 +33,22 @@ namespace RcursosHumanoss.FormulariosRRHH.VacacionesRRHH.VacacionCRUD
             LimpiarSeleccion();
         }
 
+        // =========================
+        // UI
+        // =========================
         private void ConfigurarUI()
         {
-            // Textos
-            button1.Text = "Agregar";
+            button1.Text = "Buscar";
             button2.Text = "Limpiar";
-            button3.Text = "Volver";
-            button4.Text = "Limpiar selección";
+            button3.Text = "Agregar";
+            button4.Text = "Salir";
 
-            // Grid
             dataGridView1.AutoGenerateColumns = true;
             dataGridView1.ReadOnly = true;
             dataGridView1.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
             dataGridView1.MultiSelect = false;
+
+            AcceptButton = button1; // Enter = Buscar
         }
 
         private void CargarCriterios()
@@ -64,24 +64,16 @@ namespace RcursosHumanoss.FormulariosRRHH.VacacionesRRHH.VacacionCRUD
         {
             dateTimePicker1.Value = DateTime.Today;
             dateTimePicker2.Value = DateTime.Today;
+
+            // Evitar MinDate raro
             dateTimePicker1.MinDate = new DateTime(1900, 1, 1);
             dateTimePicker2.MinDate = new DateTime(1900, 1, 1);
         }
 
-        // =========================================
-        // BUSCAR (usando el textbox + comboBox)
-        // =========================================
-        private void button4_Click(object sender, EventArgs e)
-        {
-            // "Limpiar selección" (puedes cambiarlo a "Buscar" si deseas)
-            LimpiarSeleccion();
-        }
-
-        // Si quieres que button4 sea BUSCAR y no limpiar:
-        // cambia arriba: button4.Text = "Buscar";
-        // y en este método pega el contenido de BuscarEmpleado()
-
-        private void BuscarEmpleado()
+        // =========================
+        // BUTTON 1: BUSCAR
+        // =========================
+        private void Button1_Click(object sender, EventArgs e)
         {
             string criterio = comboBox1.SelectedItem?.ToString() ?? "";
             string valor = (textBox1.Text ?? "").Trim();
@@ -95,19 +87,17 @@ namespace RcursosHumanoss.FormulariosRRHH.VacacionesRRHH.VacacionCRUD
 
             try
             {
-                // VacacionDAL.Buscar devuelve lista de vacaciones + datos de empleado.
-                // Pero para seleccionar empleado, nos sirve porque trae IdEmpleado.
                 List<EntidadVacacion> lista = VacacionDAL.Buscar(criterio, valor);
 
                 dataGridView1.DataSource = null;
                 dataGridView1.DataSource = lista;
 
-                // Ocultar columnas si quieres
                 OcultarColumnasNoNecesarias();
+                LimpiarSeleccion();
 
                 if (lista.Count == 0)
                 {
-                    MessageBox.Show("No se encontraron registros con ese criterio.", "Búsqueda",
+                    MessageBox.Show("No se encontraron registros.", "Búsqueda",
                         MessageBoxButtons.OK, MessageBoxIcon.Information);
                 }
             }
@@ -120,31 +110,39 @@ namespace RcursosHumanoss.FormulariosRRHH.VacacionesRRHH.VacacionCRUD
 
         private void OcultarColumnasNoNecesarias()
         {
-            // Si no quieres ver IDs en UI
+            // Ocultar IdVacaciones (puede venir vacío si el empleado no tiene vacaciones,
+            // pero tu DAL busca en Vacaciones, así que normalmente viene)
             if (dataGridView1.Columns["IdVacaciones"] != null)
                 dataGridView1.Columns["IdVacaciones"].Visible = false;
 
-            // El IdEmpleado puedes mostrarlo o no; igual se usa internamente
+            // Si tampoco quieres ver IdEmpleado:
             // if (dataGridView1.Columns["IdEmpleado"] != null)
             //     dataGridView1.Columns["IdEmpleado"].Visible = false;
         }
 
-        // =========================================
-        // Seleccionar empleado desde el grid
-        // =========================================
-        private void dataGridView1_CellClick(object sender, DataGridViewCellEventArgs e)
+        // =========================
+        // CLICK EN GRID: selecciona empleado
+        // =========================
+        private void DataGridView1_CellClick(object sender, DataGridViewCellEventArgs e)
         {
             if (e.RowIndex < 0) return;
 
             try
             {
                 var row = dataGridView1.Rows[e.RowIndex];
-                if (row.Cells["IdEmpleado"]?.Value == null) return;
+
+                // Necesario para registrar la vacación
+                if (row.Cells["IdEmpleado"]?.Value == null)
+                {
+                    _idEmpleadoSeleccionado = 0;
+                    return;
+                }
 
                 _idEmpleadoSeleccionado = Convert.ToInt32(row.Cells["IdEmpleado"].Value);
 
-                // Si quieres mostrar algo en el textbox:
-                // textBox1.Text = row.Cells["CI"]?.Value?.ToString();
+                // (Opcional) Puedes cargar en textbox1 el CI, si existe:
+                // if (row.Cells["CI"]?.Value != null)
+                //     textBox1.Text = row.Cells["CI"].Value.ToString();
             }
             catch
             {
@@ -155,24 +153,30 @@ namespace RcursosHumanoss.FormulariosRRHH.VacacionesRRHH.VacacionCRUD
         private void LimpiarSeleccion()
         {
             _idEmpleadoSeleccionado = 0;
-            dataGridView1.DataSource = null;
         }
 
-        // =========================================
-        // AGREGAR VACACIÓN
-        // =========================================
-        private void button1_Click(object sender, EventArgs e)
+        // =========================
+        // BUTTON 2: LIMPIAR
+        // =========================
+        private void Button2_Click(object sender, EventArgs e)
         {
-            // Si tu button2 es limpiar y button1 agregar, ok.
-            // Si quieres que button1 busque y button4 agregue, dímelo y lo ajusto.
+            textBox1.Clear();
+            comboBox1.SelectedIndex = 0;
 
+            PrepararFechas();
+
+            dataGridView1.DataSource = null;
+            LimpiarSeleccion();
+        }
+
+        // =========================
+        // BUTTON 3: AGREGAR
+        // =========================
+        private void Button3_Click(object sender, EventArgs e)
+        {
             if (_idEmpleadoSeleccionado <= 0)
             {
-                // Si no seleccionó empleado, intentamos buscar por lo escrito
-                // (puedes quitar esto si quieres obligar selección manual)
-                BuscarEmpleado();
-
-                MessageBox.Show("Seleccione un empleado del listado antes de agregar la vacación.", "Validación",
+                MessageBox.Show("Seleccione un empleado del listado (haga click en una fila).", "Validación",
                     MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
@@ -182,14 +186,14 @@ namespace RcursosHumanoss.FormulariosRRHH.VacacionesRRHH.VacacionCRUD
 
             if (fin < inicio)
             {
-                MessageBox.Show("La fecha fin no puede ser menor que la fecha inicio.", "Validación",
+                MessageBox.Show("La Fecha Fin no puede ser menor que la Fecha Inicio.", "Validación",
                     MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
 
             try
             {
-                // Validar solapamiento
+                // Validar solapamiento antes de insertar
                 if (VacacionDAL.ExisteSolapamiento(_idEmpleadoSeleccionado, inicio, fin))
                 {
                     MessageBox.Show("El empleado ya tiene vacaciones registradas que se solapan con esas fechas.",
@@ -204,9 +208,8 @@ namespace RcursosHumanoss.FormulariosRRHH.VacacionesRRHH.VacacionCRUD
                     MessageBox.Show("Vacación registrada correctamente.", "OK",
                         MessageBoxButtons.OK, MessageBoxIcon.Information);
 
-                    // Recargar grid mostrando las del mismo empleado (opcional)
-                    // BuscarEmpleado();
-                    LimpiarCampos();
+                    // Limpio después de agregar
+                    Button2_Click(sender, e);
                 }
                 else
                 {
@@ -221,33 +224,13 @@ namespace RcursosHumanoss.FormulariosRRHH.VacacionesRRHH.VacacionCRUD
             }
         }
 
-        private void LimpiarCampos()
+        // =========================
+        // BUTTON 4: SALIR
+        // =========================
+        private void Button4_Click(object sender, EventArgs e)
         {
-            textBox1.Clear();
-            comboBox1.SelectedIndex = 0;
-            dateTimePicker1.Value = DateTime.Today;
-            dateTimePicker2.Value = DateTime.Today;
-            LimpiarSeleccion();
-        }
-
-        // =========================================
-        // LIMPIAR
-        // =========================================
-        private void button2_Click(object sender, EventArgs e)
-        {
-            LimpiarCampos();
-        }
-
-        // =========================================
-        // VOLVER
-        // =========================================
-        private void button3_Click(object sender, EventArgs e)
-        {
-            // Vuelve al listado principal de vacaciones
-            var frm = new Vacacion();
-            Hide();
-            frm.FormClosed += (s, args) => Close();
-            frm.Show();
+            // No abre otra pantalla: solo cierra este form
+            this.Close();
         }
     }
 }
