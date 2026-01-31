@@ -16,9 +16,9 @@ namespace RcursosHumanoss.FormulariosRRHH.EmpleadosRRHH.EmpleadoCRUD
             button1.Click += button1_Click; // Buscar
             button2.Click += button2_Click; // Limpiar
 
-            button4.Click += button4_Click; // Abrir Agregar
-            button5.Click += button5_Click; // Abrir Actualizar
-            button3.Click += button3_Click; // Abrir Eliminar
+            button4.Click += button4_Click; // Agregar
+            button5.Click += button5_Click; // Actualizar
+            button3.Click += button3_Click; // Eliminar
 
             button6.Click += button6_Click; // Volver
         }
@@ -27,11 +27,11 @@ namespace RcursosHumanoss.FormulariosRRHH.EmpleadosRRHH.EmpleadoCRUD
         {
             ConfigurarUI();
             CargarCriterios();
-            CargarUltimosActivos();
+            CargarInicial();
         }
 
         // =========================================================
-        // UI
+        // CONFIGURACIÓN UI
         // =========================================================
         private void ConfigurarUI()
         {
@@ -68,11 +68,11 @@ namespace RcursosHumanoss.FormulariosRRHH.EmpleadosRRHH.EmpleadoCRUD
         // =========================================================
         // CARGA INICIAL
         // =========================================================
-        private void CargarUltimosActivos()
+        private void CargarInicial()
         {
             try
             {
-                var lista = EmpleadoDAL.ListarUltimosActivos(20);
+                var lista = GerenteEmpleadoDAL.ListarUltimos(20, "Todos");
                 PintarGrid(lista);
             }
             catch (Exception ex)
@@ -83,41 +83,54 @@ namespace RcursosHumanoss.FormulariosRRHH.EmpleadosRRHH.EmpleadoCRUD
         }
 
         // =========================================================
-        // BOTONES
+        // BOTÓN BUSCAR
         // =========================================================
-        private void button1_Click(object? sender, EventArgs e)
+        private void button1_Click(object sender, EventArgs e)
         {
             string criterio = comboBox1.SelectedItem?.ToString() ?? "";
             string valor = (textBox1.Text ?? "").Trim();
 
             try
             {
+                // =============================
+                // FILTROS DE ESTADO
+                // =============================
                 if (criterio.Equals("Ver Activos", StringComparison.OrdinalIgnoreCase))
                 {
-                    PintarGrid(EmpleadoDAL.BuscarConEstado("TODOS", "", "Activo"));
+                    PintarGrid(GerenteEmpleadoDAL.ListarUltimos(200, "Activo"));
                     return;
                 }
 
                 if (criterio.Equals("Ver Inactivos", StringComparison.OrdinalIgnoreCase))
                 {
-                    PintarGrid(EmpleadoDAL.BuscarConEstado("TODOS", "", "Inactivo"));
+                    PintarGrid(GerenteEmpleadoDAL.ListarUltimos(200, "Inactivo"));
                     return;
                 }
 
                 if (criterio.Equals("Ver Todos", StringComparison.OrdinalIgnoreCase))
                 {
-                    PintarGrid(EmpleadoDAL.BuscarConEstado("TODOS", "", "Todos"));
+                    PintarGrid(GerenteEmpleadoDAL.ListarUltimos(200, "Todos"));
                     return;
                 }
 
+                // =============================
+                // BÚSQUEDA NORMAL
+                // =============================
                 if (string.IsNullOrWhiteSpace(valor))
                 {
-                    MessageBox.Show("Ingrese un valor para buscar.", "Validación",
-                        MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    MessageBox.Show("Ingrese un valor para buscar.",
+                        "Validación", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                     return;
                 }
 
-                var resultado = EmpleadoDAL.BuscarConEstado(criterio, valor, "Activo");
+                var resultado = GerenteEmpleadoDAL.Buscar(criterio, valor, "Todos");
+
+                if (resultado.Count == 0)
+                {
+                    MessageBox.Show("No se encontraron coincidencias.",
+                        "Búsqueda", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                }
+
                 PintarGrid(resultado);
             }
             catch (Exception ex)
@@ -127,41 +140,47 @@ namespace RcursosHumanoss.FormulariosRRHH.EmpleadosRRHH.EmpleadoCRUD
             }
         }
 
-        private void button2_Click(object? sender, EventArgs e)
+        // =========================================================
+        // BOTÓN LIMPIAR
+        // =========================================================
+        private void button2_Click(object sender, EventArgs e)
         {
             textBox1.Clear();
             comboBox1.SelectedIndex = 0;
-            CargarUltimosActivos();
+            CargarInicial();
         }
 
-        private void button4_Click(object? sender, EventArgs e)
+        // =========================================================
+        // CRUD
+        // =========================================================
+        private void button4_Click(object sender, EventArgs e)
         {
             using (var frm = new EmpleadoAgregar())
             {
                 frm.ShowDialog();
             }
-            CargarUltimosActivos();
+            CargarInicial();
         }
 
-        private void button5_Click(object? sender, EventArgs e)
+        private void button5_Click(object sender, EventArgs e)
         {
             using (var frm = new EmpleadoActualizar())
             {
                 frm.ShowDialog();
             }
-            CargarUltimosActivos();
+            CargarInicial();
         }
 
-        private void button3_Click(object? sender, EventArgs e)
+        private void button3_Click(object sender, EventArgs e)
         {
             using (var frm = new EmpleadoEliminar())
             {
                 frm.ShowDialog();
             }
-            CargarUltimosActivos();
+            CargarInicial();
         }
 
-        private void button6_Click(object? sender, EventArgs e)
+        private void button6_Click(object sender, EventArgs e)
         {
             var menu = new FormMenuRRHH();
             Hide();

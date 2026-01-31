@@ -493,5 +493,29 @@ ORDER BY e.IdEmpleado DESC;";
                 return 0;
             }
         }
+        public static List<EntidadEmpleado> ListarUltimos(int top, int? idEstado)
+        {
+            // Si tu DAL trabaja con strings ("Activo"/"Inactivo"/"Todos") lo convertimos aquí.
+            // Si tu BD es numérica (1/2), igual te sirve porque el filtro final lo hace BuscarConEstado.
+            if (idEstado == 1) // Activo
+                return BuscarConEstado("TODOS", "", "Activo");
+
+            if (idEstado == 2) // Inactivo
+                return BuscarConEstado("TODOS", "", "Inactivo");
+
+            // null o cualquier otro => todos
+            return BuscarConEstado("TODOS", "", "Todos");
+        }
+
+        public static List<EntidadEmpleado> Buscar(int? idEstado, string criterio, string valor)
+        {
+            string estado;
+
+            if (idEstado == 1) estado = "Activo";
+            else if (idEstado == 2) estado = "Inactivo";
+            else estado = "Todos";
+
+            return BuscarConEstado(criterio, valor, estado);
+        }
     }
 }

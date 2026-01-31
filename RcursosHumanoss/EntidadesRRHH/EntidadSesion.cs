@@ -5,24 +5,23 @@ namespace RcursosHumanoss.SesionRRHH
     internal static class EntidadSesion
     {
         // ==========================
-        // Datos de sesión
+        //  Datos de sesión
         // ==========================
         public static int IdEmpleado { get; private set; }
+        public static string Email { get; private set; } = "";
+
         public static int IdDepartamento { get; private set; }
         public static int IdCargo { get; private set; }
 
-        public static string Cargo { get; private set; } = "";
         public static string Departamento { get; private set; } = "";
-        public static string Email { get; private set; } = "";
+        public static string Cargo { get; private set; } = "";
+
         public static string NombreCompleto { get; private set; } = "";
 
-        // ==========================
-        // Bandera de sesión activa
-        // ==========================
         public static bool HaySesion => IdEmpleado > 0;
 
         // ==========================
-        // Iniciar sesión (completo)
+        //  Iniciar sesión
         // ==========================
         public static void Iniciar(
             int idEmpleado,
@@ -47,26 +46,28 @@ namespace RcursosHumanoss.SesionRRHH
         }
 
         // ==========================
-        // Validar sesión
+        //  Validación
         // ==========================
         public static void AsegurarSesion()
         {
             if (!HaySesion)
-                throw new InvalidOperationException("No hay sesión iniciada.");
+                throw new InvalidOperationException("No hay sesión iniciada. Inicie sesión primero.");
         }
 
         // ==========================
-        // Cerrar sesión
+        //  Cerrar sesión
         // ==========================
         public static void Cerrar()
         {
             IdEmpleado = 0;
-            IdDepartamento = 0;
-            IdCargo = 0;
-
-            Cargo = "";
-            Departamento = "";
             Email = "";
+
+            IdDepartamento = 0;
+            Departamento = "";
+
+            IdCargo = 0;
+            Cargo = "";
+
             NombreCompleto = "";
         }
     }

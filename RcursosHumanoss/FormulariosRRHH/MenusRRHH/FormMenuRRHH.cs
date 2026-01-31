@@ -55,15 +55,19 @@ namespace RcursosHumanoss.FormulariosRRHH.MenusRRHH
         // EmpleadoInformación.cs
         private void Button3_Click(object sender, EventArgs e)
         {
-            var frm = new EmpleadoInformación();
-            AbrirFormulario(frm);
+            var frm = new EmpleadoInformacion();
+            this.Hide();
+            frm.FormClosed += (s, args) => this.Show(); // cuando cierre, vuelve al menú
+            frm.Show();
         }
 
         // VacacionInformacion.cs
         private void Button4_Click(object sender, EventArgs e)
         {
             var frm = new VacacionInformacion();
-            AbrirFormulario(frm);
+            this.Hide();
+            frm.FormClosed += (s, args) => this.Show(); // cuando cierre, vuelve al menú
+            frm.Show();
         }
 
         // =========================
@@ -75,5 +79,6 @@ namespace RcursosHumanoss.FormulariosRRHH.MenusRRHH
             frm.FormClosed += (_, __) => Show();
             frm.Show();
         }
+
     }
 }

@@ -1,41 +1,40 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Windows.Forms;
+
 using RcursosHumanoss.DALRRHH;
 using RcursosHumanoss.EntidadesRRHH;
 using RcursosHumanoss.SesionRRHH;
 
 namespace RcursosHumanoss.FormulariosRRHH.VacacionesRRHH.VacacionCRUD
 {
-    public partial class VacacionInfromacion : Form
+    public partial class VacacionArea : Form
     {
-        public VacacionInfromacion()
+        public VacacionArea()
         {
             InitializeComponent();
 
-            // Eventos sin tocar el Designer
-            Load += VacacionInfromacion_Load;
+            // Eventos SIN tocar el Designer
+            Load += VacacionArea_Load;
 
-            button1.Click += Button1_Click; // Buscar
-            button2.Click += Button2_Click; // Limpiar
-            button4.Click += Button4_Click; // Salir
-
-            // button3 no hace nada (lo dejamos quieto)
+            button1.Click += Button1_Buscar_Click;   // Buscar
+            button2.Click += Button2_Limpiar_Click;  // Limpiar
+            button3.Click += Button3_Volver_Click;   // Volver
+            button4.Click += Button4_Salir_Click;    // Salir
         }
 
-        private void VacacionInfromacion_Load(object sender, EventArgs e)
+        private void VacacionArea_Load(object sender, EventArgs e)
         {
             ConfigurarUI();
             CargarCriterios();
-            CargarUltimosMiDepartamento();
+            CargarUltimasVacacionesMiDepartamento();
         }
 
         private void ConfigurarUI()
         {
             button1.Text = "Buscar";
             button2.Text = "Limpiar";
-            button3.Text = "";     // no hace nada
-            button3.Enabled = false; // opcional, para que no moleste
+            button3.Text = "Volver";
             button4.Text = "Salir";
 
             dataGridView1.AutoGenerateColumns = true;
@@ -53,10 +52,10 @@ namespace RcursosHumanoss.FormulariosRRHH.VacacionesRRHH.VacacionCRUD
             comboBox1.SelectedIndex = 0;
         }
 
-        // ============================================
-        //  CARGA INICIAL: últimos con vacaciones
-        // ============================================
-        private void CargarUltimosMiDepartamento()
+        // =========================================
+        // CARGA INICIAL
+        // =========================================
+        private void CargarUltimasVacacionesMiDepartamento()
         {
             try
             {
@@ -64,13 +63,14 @@ namespace RcursosHumanoss.FormulariosRRHH.VacacionesRRHH.VacacionCRUD
 
                 if (idDep <= 0)
                 {
-                    MessageBox.Show("No se detectó el IdDepartamento en sesión.",
+                    MessageBox.Show("No se encontró el departamento en sesión.",
                         "Sesión", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                    dataGridView1.DataSource = null;
                     return;
                 }
 
-                var lista = VacacionDAL.ListarUltimosConVacacionesPorDepartamento(20, idDep);
+                List<EntidadVacacion> lista =
+                    VacacionDAL.ListarUltimasPorDepartamento(20, idDep);
+
                 PintarGrid(lista);
             }
             catch (Exception ex)
@@ -80,18 +80,18 @@ namespace RcursosHumanoss.FormulariosRRHH.VacacionesRRHH.VacacionCRUD
             }
         }
 
-        // ============================================
-        //  BUTTON 1: BUSCAR
-        // ============================================
-        private void Button1_Click(object sender, EventArgs e)
+        // =========================================
+        // BUSCAR
+        // =========================================
+        private void Button1_Buscar_Click(object sender, EventArgs e)
         {
             string criterio = comboBox1.SelectedItem?.ToString() ?? "";
             string valor = (textBox1.Text ?? "").Trim();
 
             if (string.IsNullOrWhiteSpace(valor))
             {
-                MessageBox.Show("Ingrese un valor para buscar.", "Validación",
-                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show("Ingrese un valor para buscar.",
+                    "Validación", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
 
@@ -101,51 +101,63 @@ namespace RcursosHumanoss.FormulariosRRHH.VacacionesRRHH.VacacionCRUD
 
                 if (idDep <= 0)
                 {
-                    MessageBox.Show("No se detectó el IdDepartamento en sesión.",
+                    MessageBox.Show("No se encontró el departamento en sesión.",
                         "Sesión", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                     return;
                 }
 
-                var lista = VacacionDAL.BuscarPorDepartamento(criterio, valor, idDep);
+                List<EntidadVacacion> lista =
+                    VacacionDAL.BuscarEnDepartamento(criterio, valor, idDep);
+
                 PintarGrid(lista);
 
                 if (lista.Count == 0)
                 {
-                    MessageBox.Show("No se encontraron registros.", "Búsqueda",
-                        MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    MessageBox.Show("No se encontraron registros en tu área.",
+                        "Búsqueda", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 }
             }
             catch (Exception ex)
             {
-                MessageBox.Show("Error en búsqueda:\n" + ex.Message,
+                MessageBox.Show("Error en la búsqueda:\n" + ex.Message,
                     "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
-        // ============================================
-        //  BUTTON 2: LIMPIAR
-        // ============================================
-        private void Button2_Click(object sender, EventArgs e)
+        // =========================================
+        // LIMPIAR
+        // =========================================
+        private void Button2_Limpiar_Click(object sender, EventArgs e)
         {
             textBox1.Clear();
             comboBox1.SelectedIndex = 0;
-            CargarUltimosMiDepartamento();
+            CargarUltimasVacacionesMiDepartamento();
         }
 
-        // ============================================
-        //  BUTTON 4: SALIR
-        // ============================================
-        private void Button4_Click(object sender, EventArgs e)
+        // =========================================
+        // VOLVER (NO abre otro form)
+        // =========================================
+        private void Button3_Volver_Click(object sender, EventArgs e)
         {
             Close();
         }
 
+        // =========================================
+        // SALIR
+        // =========================================
+        private void Button4_Salir_Click(object sender, EventArgs e)
+        {
+            Close();
+        }
+
+        // =========================================
+        // GRID
+        // =========================================
         private void PintarGrid(List<EntidadVacacion> lista)
         {
             dataGridView1.DataSource = null;
             dataGridView1.DataSource = lista;
 
-            // Ocultar IDs si no quieres mostrarlos
             if (dataGridView1.Columns["IdVacaciones"] != null)
                 dataGridView1.Columns["IdVacaciones"].Visible = false;
 
