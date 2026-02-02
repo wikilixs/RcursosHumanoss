@@ -11,6 +11,12 @@ namespace RcursosHumanoss.DALRRHH
     internal static class EmpleadoDAL
     {
         // ===========================
+        //  IDs DE ESTADO (según tu DB)
+        // ===========================
+        private const int ESTADO_ACTIVO = 5;
+        private const int ESTADO_INACTIVO = 6;
+
+        // ===========================
         //  PUBLIC: LISTAR (ACTIVOS)
         // ===========================
         public static List<EntidadEmpleado> ListarUltimosActivos(int top)
@@ -39,9 +45,9 @@ OUTER APPLY (
     FROM EstadoHistorial eh
     INNER JOIN Estado es ON es.IdEstado = eh.IdEstado
     WHERE eh.IdEmpleado = e.IdEmpleado
-    ORDER BY eh.IdHistorial DESC
+    ORDER BY eh.FechaRegitro DESC, eh.IdHistorial DESC
 ) est
-WHERE ISNULL(est.IdEstado, 1) = 1
+WHERE ISNULL(est.IdEstado, @Activo) = @Activo
 ORDER BY e.IdEmpleado DESC;";
 
             var lista = new List<EntidadEmpleado>();
@@ -50,6 +56,7 @@ ORDER BY e.IdEmpleado DESC;";
             using (SqlCommand cmd = new SqlCommand(sql, cn))
             {
                 cmd.Parameters.Add("@Top", SqlDbType.Int).Value = top;
+                cmd.Parameters.Add("@Activo", SqlDbType.Int).Value = ESTADO_ACTIVO;
 
                 using (SqlDataReader rd = cmd.ExecuteReader())
                 {
@@ -71,7 +78,7 @@ ORDER BY e.IdEmpleado DESC;";
             criterio = (criterio ?? "").Trim().ToUpperInvariant();
             valor = (valor ?? "").Trim();
 
-            int? idEstadoFiltro = NormalizarEstado(estado); // 1/2/null (null = todos)
+            int? idEstadoFiltro = NormalizarEstado(estado); // 5/6/null
 
             string whereCriterio;
             if (criterio == "CI")
@@ -83,16 +90,13 @@ ORDER BY e.IdEmpleado DESC;";
             else
                 whereCriterio = "(e.CI LIKE @Valor OR e.Nombres LIKE @Valor OR e.PrimerApellido LIKE @Valor OR e.SegundoApellido LIKE @Valor)";
 
-            // Si criterio viene como "TODOS" y valor vacío (caso: ver activos/inactivos/todos)
             bool sinFiltroTexto = (criterio == "TODOS" || criterio == "") && string.IsNullOrWhiteSpace(valor);
 
             string whereEstado = idEstadoFiltro.HasValue
-                ? "AND ISNULL(est.IdEstado, 1) = @IdEstado"
+                ? "AND ISNULL(est.IdEstado, @Activo) = @IdEstado"
                 : "";
 
-            string whereFinal = sinFiltroTexto
-                ? "1=1"
-                : whereCriterio;
+            string whereFinal = sinFiltroTexto ? "1=1" : whereCriterio;
 
             string sql = $@"
 SELECT
@@ -118,7 +122,7 @@ OUTER APPLY (
     FROM EstadoHistorial eh
     INNER JOIN Estado es ON es.IdEstado = eh.IdEstado
     WHERE eh.IdEmpleado = e.IdEmpleado
-    ORDER BY eh.IdHistorial DESC
+    ORDER BY eh.FechaRegitro DESC, eh.IdHistorial DESC
 ) est
 WHERE {whereFinal}
 {whereEstado}
@@ -129,6 +133,8 @@ ORDER BY e.IdEmpleado DESC;";
             using (SqlConnection cn = ConexionDB.ObtenerConexion())
             using (SqlCommand cmd = new SqlCommand(sql, cn))
             {
+                cmd.Parameters.Add("@Activo", SqlDbType.Int).Value = ESTADO_ACTIVO;
+
                 if (!sinFiltroTexto)
                     cmd.Parameters.Add("@Valor", SqlDbType.NVarChar, 200).Value = "%" + valor + "%";
 
@@ -148,12 +154,12 @@ ORDER BY e.IdEmpleado DESC;";
         // ===========================
         //  INSERTAR + CREAR USUARIO
         //  Email estilo: juan.mamani@tiendaboli.com
+        //  Estado inicial: Activo (5)
         // ===========================
         public static int InsertarUsuarioAuto(EntidadEmpleado emp)
         {
             if (emp == null) throw new ArgumentNullException(nameof(emp));
 
-            // Validaciones mínimas
             if (string.IsNullOrWhiteSpace(emp.Nombres)) throw new ArgumentException("Nombres es obligatorio.");
             if (string.IsNullOrWhiteSpace(emp.PrimerApellido)) throw new ArgumentException("PrimerApellido es obligatorio.");
             if (string.IsNullOrWhiteSpace(emp.CI)) throw new ArgumentException("CI es obligatorio.");
@@ -161,11 +167,10 @@ ORDER BY e.IdEmpleado DESC;";
             if (emp.IdDepartamento <= 0) throw new ArgumentException("IdDepartamento inválido.");
             if (emp.IdCargo <= 0) throw new ArgumentException("IdCargo inválido.");
 
-            // Generar email
+            // Genera email base
             string email = GenerarEmail(emp.Nombres, emp.PrimerApellido);
 
             // Password por defecto (hash)
-            // Puedes cambiarla luego por algo que generes aleatorio.
             string passwordPlano = "123456";
             string passwordHash = BCrypt.Net.BCrypt.HashPassword(passwordPlano);
 
@@ -202,19 +207,19 @@ SELECT CAST(SCOPE_IDENTITY() AS INT);";
                     if (idEmpleado <= 0)
                         throw new Exception("No se pudo insertar el empleado.");
 
-                    // 2) Insert EstadoHistorial -> Activo(1)
+                    // 2) Insert EstadoHistorial -> Activo(5) + FechaRegitro ✅
                     const string sqlEstado = @"
-INSERT INTO EstadoHistorial (IdEmpleado, IdEstado, FechaCambio)
-VALUES (@IdEmpleado, 1, GETDATE());";
+INSERT INTO EstadoHistorial (IdEmpleado, IdEstado, FechaRegitro)
+VALUES (@IdEmpleado, @IdEstado, GETDATE());";
 
                     using (SqlCommand cmdEst = new SqlCommand(sqlEstado, cn, tx))
                     {
                         cmdEst.Parameters.Add("@IdEmpleado", SqlDbType.Int).Value = idEmpleado;
+                        cmdEst.Parameters.Add("@IdEstado", SqlDbType.Int).Value = ESTADO_ACTIVO;
                         cmdEst.ExecuteNonQuery();
                     }
 
                     // 3) Insert Usuario
-                    // Si Email ya existe, falla con excepción (unique) o lo puedes validar antes.
                     const string sqlUser = @"
 INSERT INTO Usuario (Email, [Password], IdEmpleado)
 VALUES (@Email, @Pass, @IdEmpleado);";
@@ -241,18 +246,15 @@ VALUES (@Email, @Pass, @IdEmpleado);";
         // =========================================================
         //  SUPERVISOR: LISTAR POR DEPARTAMENTO
         // =========================================================
-
-        // Overload: toma IdDepartamento desde sesión (sin depender del nombre exacto)
         public static List<EntidadEmpleado> ListarUltimosActivosPorDepartamento(int top)
         {
             int idDep = ObtenerIdDepartamentoSesion();
             if (idDep <= 0)
-                throw new InvalidOperationException("No se pudo obtener IdDepartamento desde la sesión (EntidadSesion/EnridadSesion/SesionActual).");
+                throw new InvalidOperationException("No se pudo obtener IdDepartamento desde la sesión.");
 
             return ListarUltimosActivosPorDepartamento(top, idDep);
         }
 
-        // Overload: explícito (si tu form lo llama con idDep)
         public static List<EntidadEmpleado> ListarUltimosActivosPorDepartamento(int top, int idDepartamento)
         {
             const string sql = @"
@@ -279,10 +281,10 @@ OUTER APPLY (
     FROM EstadoHistorial eh
     INNER JOIN Estado es ON es.IdEstado = eh.IdEstado
     WHERE eh.IdEmpleado = e.IdEmpleado
-    ORDER BY eh.IdHistorial DESC
+    ORDER BY eh.FechaRegitro DESC, eh.IdHistorial DESC
 ) est
 WHERE e.IdDepartamento = @IdDep
-  AND ISNULL(est.IdEstado, 1) = 1
+  AND ISNULL(est.IdEstado, @Activo) = @Activo
 ORDER BY e.IdEmpleado DESC;";
 
             var lista = new List<EntidadEmpleado>();
@@ -292,6 +294,7 @@ ORDER BY e.IdEmpleado DESC;";
             {
                 cmd.Parameters.Add("@Top", SqlDbType.Int).Value = top;
                 cmd.Parameters.Add("@IdDep", SqlDbType.Int).Value = idDepartamento;
+                cmd.Parameters.Add("@Activo", SqlDbType.Int).Value = ESTADO_ACTIVO;
 
                 using (SqlDataReader rd = cmd.ExecuteReader())
                 {
@@ -310,7 +313,7 @@ ORDER BY e.IdEmpleado DESC;";
         {
             int idDep = ObtenerIdDepartamentoSesion();
             if (idDep <= 0)
-                throw new InvalidOperationException("No se pudo obtener IdDepartamento desde la sesión (EntidadSesion/EnridadSesion/SesionActual).");
+                throw new InvalidOperationException("No se pudo obtener IdDepartamento desde la sesión.");
 
             return BuscarEnDepartamento(criterio, valor, idDep);
         }
@@ -354,7 +357,7 @@ OUTER APPLY (
     FROM EstadoHistorial eh
     INNER JOIN Estado es ON es.IdEstado = eh.IdEstado
     WHERE eh.IdEmpleado = e.IdEmpleado
-    ORDER BY eh.IdHistorial DESC
+    ORDER BY eh.FechaRegitro DESC, eh.IdHistorial DESC
 ) est
 WHERE e.IdDepartamento = @IdDep
   AND {whereCriterio}
@@ -376,6 +379,31 @@ ORDER BY e.IdEmpleado DESC;";
             }
 
             return lista;
+        }
+
+        // =========================================================
+        //  COMPATIBILIDAD (si algún form llama ListarUltimos/Buscar)
+        // =========================================================
+        public static List<EntidadEmpleado> ListarUltimos(int top, int? idEstado)
+        {
+            // tu DB: 5 Activo / 6 Inactivo
+            if (idEstado == ESTADO_ACTIVO)
+                return BuscarConEstado("TODOS", "", "Activo");
+
+            if (idEstado == ESTADO_INACTIVO)
+                return BuscarConEstado("TODOS", "", "Inactivo");
+
+            return BuscarConEstado("TODOS", "", "Todos");
+        }
+
+        public static List<EntidadEmpleado> Buscar(int? idEstado, string criterio, string valor)
+        {
+            string estado;
+            if (idEstado == ESTADO_ACTIVO) estado = "Activo";
+            else if (idEstado == ESTADO_INACTIVO) estado = "Inactivo";
+            else estado = "Todos";
+
+            return BuscarConEstado(criterio, valor, estado);
         }
 
         // =========================================================
@@ -404,19 +432,18 @@ ORDER BY e.IdEmpleado DESC;";
             };
         }
 
-        // Activo=1, Inactivo=2, Todos=null
+        // Activo=5, Inactivo=6, Todos=null
         private static int? NormalizarEstado(string estado)
         {
             string s = (estado ?? "").Trim().ToLowerInvariant();
 
-            if (s.Contains("activo")) return 1;
-            if (s.Contains("inactivo")) return 2;
+            if (s.Contains("activo")) return ESTADO_ACTIVO;
+            if (s.Contains("inactivo")) return ESTADO_INACTIVO;
             if (s.Contains("todos")) return null;
 
-            // si viene vacío -> por defecto Activo (como tu pantalla)
-            if (string.IsNullOrWhiteSpace(s)) return 1;
+            // si viene vacío -> por defecto Activo (como suelen hacer tus pantallas)
+            if (string.IsNullOrWhiteSpace(s)) return ESTADO_ACTIVO;
 
-            // cualquier cosa rara -> null (no filtrar)
             return null;
         }
 
@@ -480,7 +507,11 @@ ORDER BY e.IdEmpleado DESC;";
                 Type t = Type.GetType(fullTypeName);
                 if (t == null) return 0;
 
-                var p = t.GetProperty(propName, System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+                var p = t.GetProperty(propName,
+                    System.Reflection.BindingFlags.Public |
+                    System.Reflection.BindingFlags.NonPublic |
+                    System.Reflection.BindingFlags.Static);
+
                 if (p == null) return 0;
 
                 object v = p.GetValue(null);
@@ -492,30 +523,6 @@ ORDER BY e.IdEmpleado DESC;";
             {
                 return 0;
             }
-        }
-        public static List<EntidadEmpleado> ListarUltimos(int top, int? idEstado)
-        {
-            // Si tu DAL trabaja con strings ("Activo"/"Inactivo"/"Todos") lo convertimos aquí.
-            // Si tu BD es numérica (1/2), igual te sirve porque el filtro final lo hace BuscarConEstado.
-            if (idEstado == 1) // Activo
-                return BuscarConEstado("TODOS", "", "Activo");
-
-            if (idEstado == 2) // Inactivo
-                return BuscarConEstado("TODOS", "", "Inactivo");
-
-            // null o cualquier otro => todos
-            return BuscarConEstado("TODOS", "", "Todos");
-        }
-
-        public static List<EntidadEmpleado> Buscar(int? idEstado, string criterio, string valor)
-        {
-            string estado;
-
-            if (idEstado == 1) estado = "Activo";
-            else if (idEstado == 2) estado = "Inactivo";
-            else estado = "Todos";
-
-            return BuscarConEstado(criterio, valor, estado);
         }
     }
 }

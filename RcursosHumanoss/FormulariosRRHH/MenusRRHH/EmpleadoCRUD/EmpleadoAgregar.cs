@@ -34,12 +34,13 @@ namespace RcursosHumanoss.FormulariosRRHH.EmpleadosRRHH.EmpleadoCRUD
             // (Opcional) limitar entrada a números
             maskedTextBox4.KeyPress += SoloNumeros_KeyPress; // CI
             maskedTextBox5.KeyPress += SoloNumeros_KeyPress; // Teléfono
+
+            // Si el designer no conectó el Load, aquí lo conectamos sin tocar el diseñador
+            Load += EmpleadoAgregar_Load;
         }
 
         private void EmpleadoAgregar_Load(object sender, EventArgs e)
         {
-            // Si tu Designer NO tiene "Load += ..." lo puedes agregar ahí o aquí:
-            // (No pasa nada si no se llama, pero se recomienda)
             CargarCombos();
         }
 
@@ -52,53 +53,31 @@ namespace RcursosHumanoss.FormulariosRRHH.EmpleadosRRHH.EmpleadoCRUD
         }
 
         // =========================================================
-        //  Combos (listas fijas según tu BD)
+        //  Combos (desde BD: IDs reales autoincrementables)
         // =========================================================
         private void CargarCombos()
         {
-            // Departamentos (IDs según lo que manejas)
-            comboBox1.DataSource = TablaDepartamentos();
-            comboBox1.DisplayMember = "Nombre";
-            comboBox1.ValueMember = "Id";
-            comboBox1.SelectedIndex = -1;
+            try
+            {
+                // Departamentos reales desde BD
+                DataTable dtDep = CatalogoDAL.ListarDepartamentos();
+                comboBox1.DataSource = dtDep;
+                comboBox1.DisplayMember = "Nombre";
+                comboBox1.ValueMember = "IdDepartamento";
+                comboBox1.SelectedIndex = -1;
 
-            // Cargos
-            comboBox2.DataSource = TablaCargos();
-            comboBox2.DisplayMember = "Nombre";
-            comboBox2.ValueMember = "Id";
-            comboBox2.SelectedIndex = -1;
-        }
-
-        private static DataTable TablaDepartamentos()
-        {
-            DataTable dt = new DataTable();
-            dt.Columns.Add("Id", typeof(int));
-            dt.Columns.Add("Nombre", typeof(string));
-
-            dt.Rows.Add(1, "Recursos Humanos");
-            dt.Rows.Add(2, "Contabilidad");
-            dt.Rows.Add(3, "Sistemas");
-            dt.Rows.Add(4, "Ventas");
-            dt.Rows.Add(5, "Marketing");
-            dt.Rows.Add(6, "Logística");
-            dt.Rows.Add(7, "Producción");
-            return dt;
-        }
-
-        private static DataTable TablaCargos()
-        {
-            DataTable dt = new DataTable();
-            dt.Columns.Add("Id", typeof(int));
-            dt.Columns.Add("Nombre", typeof(string));
-
-            dt.Rows.Add(1, "Gerente");
-            dt.Rows.Add(2, "Supervisor");
-            dt.Rows.Add(3, "Analista");
-            dt.Rows.Add(4, "Asistente");
-            dt.Rows.Add(5, "Técnico");
-            dt.Rows.Add(6, "Vendedor");
-            dt.Rows.Add(7, "Auxiliar");
-            return dt;
+                // Cargos reales desde BD
+                DataTable dtCar = CatalogoDAL.ListarCargos();
+                comboBox2.DataSource = dtCar;
+                comboBox2.DisplayMember = "Nombre";
+                comboBox2.ValueMember = "IdCargo";
+                comboBox2.SelectedIndex = -1;
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Error cargando Departamentos/Cargos:\n" + ex.Message,
+                    "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
         }
 
         // =========================================================
@@ -164,7 +143,7 @@ namespace RcursosHumanoss.FormulariosRRHH.EmpleadosRRHH.EmpleadoCRUD
 
             try
             {
-                // Creamos entidad (la entidad debe tener estas props)
+                // Creamos entidad
                 EntidadEmpleado emp = new EntidadEmpleado
                 {
                     Nombres = nombres,
@@ -177,7 +156,7 @@ namespace RcursosHumanoss.FormulariosRRHH.EmpleadosRRHH.EmpleadoCRUD
                     IdCargo = idCargo
                 };
 
-                // Esto debe existir en tu DAL: inserta empleado + crea usuario automático
+                // Inserta empleado + crea usuario automático
                 int idEmpleado = EmpleadoDAL.InsertarUsuarioAuto(emp);
 
                 MessageBox.Show($"Empleado agregado correctamente. IdEmpleado: {idEmpleado}",
@@ -193,11 +172,10 @@ namespace RcursosHumanoss.FormulariosRRHH.EmpleadosRRHH.EmpleadoCRUD
         }
 
         // =========================================================
-        //  Botón Volver (a Empleado.cs)
+        //  Botón Volver
         // =========================================================
         private void button2_Click(object sender, EventArgs e)
         {
-            // Cierro este form; el form padre sigue abierto atrás (ShowDialog recomendado)
             Close();
         }
 
@@ -229,7 +207,7 @@ namespace RcursosHumanoss.FormulariosRRHH.EmpleadosRRHH.EmpleadoCRUD
         // Tu evento ya existe en el Designer, lo dejo (no lo elimino)
         private void maskedTextBox1_MaskInputRejected(object sender, MaskInputRejectedEventArgs e)
         {
-            // Opcional: puedes mostrar tooltip o ignorar.
+            // Opcional
         }
     }
 }
